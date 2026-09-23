@@ -1,5 +1,12 @@
 import multer from "multer";
 import path from "path";
+import fs from "fs";
+
+// Git khaali folders track nahi karta, isliye deploy par ye folder khud banana padta hai
+const uploadDir = "uploads";
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
