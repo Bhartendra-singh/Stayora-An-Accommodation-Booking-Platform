@@ -1,10 +1,13 @@
 import Booking from "../models/Booking.js";
 import Room from "../models/Room.js";
 import Hotel from "../models/Hotel.js";
+import User from "../models/User.js";
 import transporter from "../config/nodemailer.js";
-import { clerkClient } from "@clerk/clerk-sdk-node";
+import { clerkClient } from "@clerk/express";
 import Razorpay from "razorpay";
 import crypto from "crypto";
+import Coupon from "../models/Coupon.js";
+import PDFDocument from "pdfkit";
 
 
 /**
@@ -45,7 +48,7 @@ export const checkAvailabilityAPI = async (req, res) => {
  */
 export const createBooking = async (req, res) => {
   try {
-    const { room, checkInDate, checkOutDate, guests } = req.body;
+    const { room, checkInDate, checkOutDate, guests, couponCode } = req.body;
     const { userId } = req.auth();
 
     const isAvailable = await checkAvailability({
@@ -72,6 +75,28 @@ export const createBooking = async (req, res) => {
 
     totalPrice *= nights;
 
+    // Re-validate the coupon server-side — never trust a discount amount
+    // sent from the client, always recompute it here.
+    let discountAmount = 0;
+    let appliedCouponCode = null;
+
+    if (couponCode) {
+      const coupon = await Coupon.findOne({
+        code: couponCode.toUpperCase().trim(),
+        hotel: roomData.hotel._id,
+      });
+
+      if (
+        coupon &&
+        coupon.isActive &&
+        new Date(coupon.expiryDate) >= new Date()
+      ) {
+        discountAmount = Math.round((totalPrice * coupon.discountPercent) / 100);
+        totalPrice -= discountAmount;
+        appliedCouponCode = coupon.code;
+      }
+    }
+
     await Booking.create({
       user: userId,
       room,
@@ -80,20 +105,24 @@ export const createBooking = async (req, res) => {
       checkInDate,
       checkOutDate,
       totalPrice,
+      couponCode: appliedCouponCode,
+      discountAmount,
     });
 
-let user;
-try {
-  user = await clerkClient.users.getUser(userId);
-} catch {
-  user = null;
-}
+    let user;
+    try {
+      user = await clerkClient.users.getUser(userId);
+    } catch {
+      user = null;
+    }
 
-const mailOptions = {
-  from: process.env.SENDER_EMAIL,
-  to: user.emailAddresses?.[0]?.emailAddress, 
-  subject: 'Hotel Booking Details',
-  html: `
+    if (user?.emailAddresses?.[0]?.emailAddress) {
+      try {
+        const mailOptions = {
+          from: process.env.SENDER_EMAIL,
+          to: user.emailAddresses[0].emailAddress,
+          subject: 'Hotel Booking Details',
+          html: `
     <h2>Your Booking Details</h2>
     <p>Dear ${user.firstName || "User"},</p>
     <p>Thank you for your booking! Here are your details:</p>
@@ -103,14 +132,19 @@ const mailOptions = {
       <li><strong>Check-In Date:</strong> ${new Date(checkInDate).toDateString()}</li>
       <li><strong>Check-Out Date:</strong> ${new Date(checkOutDate).toDateString()}</li>
       <li><strong>Guests:</strong> ${guests}</li>
+      ${appliedCouponCode ? `<li><strong>Coupon Applied:</strong> ${appliedCouponCode} (-${process.env.CURRENCY || "₹"}${discountAmount})</li>` : ""}
       <li><strong>Booking Amount:</strong> ${process.env.CURRENCY || "₹"} ${totalPrice}</li>
     </ul>
     <p>We look forward to welcoming you!</p>
     <p>If you need to make any changes, feel free to contact us.</p>  
   `
-}
+        };
 
-    await transporter.sendMail(mailOptions)
+        await transporter.sendMail(mailOptions);
+      } catch (mailError) {
+        console.error("Booking confirmation email failed:", mailError.message);
+      }
+    }
 
     res.json({
       success: true,
@@ -165,9 +199,26 @@ export const getHotelBookings = async (req, res) => {
       .populate("room hotel")
       .sort({ createdAt: -1 });
 
-    const totalBookings = bookings.length;
+    // Booking.user stores the Clerk ID (a string), not the User model's
+    // Mongo _id — so Mongoose `.populate("user")` can never match it.
+    // We look the users up manually instead, and attach display info
+    // to each booking before sending it to the frontend.
+    const clerkIds = [...new Set(bookings.map((b) => b.user))];
+    const users = await User.find({ clerkId: { $in: clerkIds } });
+    const userMap = Object.fromEntries(users.map((u) => [u.clerkId, u]));
 
-    const totalRevenue = bookings.reduce(
+    const bookingsWithUser = bookings.map((b) => {
+      const obj = b.toObject();
+      const matchedUser = userMap[b.user];
+      obj.userName = matchedUser?.username || matchedUser?.email || "Guest";
+      return obj;
+    });
+
+    const activeBookings = bookings.filter((b) => b.status !== "cancelled");
+
+    const totalBookings = activeBookings.length;
+
+    const totalRevenue = activeBookings.reduce(
       (acc, booking) => acc + booking.totalPrice,
       0
     );
@@ -177,7 +228,7 @@ export const getHotelBookings = async (req, res) => {
       dashboardData: {
         totalBookings,
         totalRevenue,
-        bookings,
+        bookings: bookingsWithUser,
       },
     });
   } catch (error) {
@@ -188,11 +239,20 @@ export const getHotelBookings = async (req, res) => {
   }
 };
 
-//For payment
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET,
-});
+//For payment — created lazily so a missing/empty Razorpay key doesn't crash the whole server on startup
+let razorpay = null;
+const getRazorpay = () => {
+  if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+    throw new Error("Razorpay is not configured (missing RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET in .env)");
+  }
+  if (!razorpay) {
+    razorpay = new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET,
+    });
+  }
+  return razorpay;
+};
 
 // CREATE ORDER
 export const razorpayPayment = async (req, res) => {
@@ -204,7 +264,7 @@ export const razorpayPayment = async (req, res) => {
       return res.json({ success: false });
     }
 
-    const order = await razorpay.orders.create({
+    const order = await getRazorpay().orders.create({
       amount: booking.totalPrice * 100,
       currency: "INR",
       receipt: bookingId.toString(),
@@ -216,7 +276,7 @@ export const razorpayPayment = async (req, res) => {
     });
   } catch (err) {
     console.log(err);
-    res.json({ success: false });
+    res.json({ success: false, message: err.message });
   }
 };
 
@@ -250,5 +310,111 @@ export const verifyRazorpay = async (req, res) => {
     res.json({ success: false });
   } catch (err) {
     res.json({ success: false });
+  }
+};
+
+
+
+export const cancelBooking = async (req, res) => {
+  try {
+    const { userId } = req.auth();
+    const { id } = req.params;
+
+    const booking = await Booking.findById(id);
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    if (booking.user !== userId) {
+      return res.status(403).json({ success: false, message: "Not authorized to cancel this booking" });
+    }
+
+    if (booking.status === "cancelled") {
+      return res.status(400).json({ success: false, message: "Booking is already cancelled" });
+    }
+
+    booking.status = "cancelled";
+    await booking.save();
+
+    res.json({ success: true, message: "Booking cancelled successfully", booking });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+
+/**
+ * GENERATE PDF INVOICE (only the booking's own user can download it)
+ */
+export const generateInvoice = async (req, res) => {
+  try {
+    const { userId } = req.auth();
+    const { id } = req.params;
+
+    const booking = await Booking.findById(id).populate("room hotel");
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    if (booking.user !== userId) {
+      return res.status(403).json({ success: false, message: "Not authorized to view this invoice" });
+    }
+
+    const currency = process.env.CURRENCY || "Rs.";
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=invoice-${booking._id}.pdf`
+    );
+
+    const doc = new PDFDocument({ margin: 50 });
+    doc.pipe(res);
+
+    doc.fontSize(20).text("WanderLust", { align: "left" });
+    doc.fontSize(10).fillColor("#666").text("Booking Invoice", { align: "left" });
+    doc.moveDown(2);
+
+    doc.fillColor("#000").fontSize(12);
+    doc.text(`Invoice for Booking #${booking._id}`);
+    doc.text(`Date: ${new Date(booking.createdAt).toDateString()}`);
+    doc.moveDown();
+
+    doc.fontSize(14).text("Stay Details", { underline: true });
+    doc.moveDown(0.5);
+    doc.fontSize(11);
+    doc.text(`Hotel: ${booking.hotel?.name || "N/A"}`);
+    doc.text(`Address: ${booking.hotel?.address || "N/A"}`);
+    doc.text(`Room Type: ${booking.room?.roomType || "N/A"}`);
+    doc.text(`Check-In: ${new Date(booking.checkInDate).toDateString()}`);
+    doc.text(`Check-Out: ${new Date(booking.checkOutDate).toDateString()}`);
+    doc.text(`Guests: ${booking.guests}`);
+    doc.moveDown();
+
+    doc.fontSize(14).text("Payment Summary", { underline: true });
+    doc.moveDown(0.5);
+    doc.fontSize(11);
+
+    if (booking.couponCode) {
+      doc.text(`Coupon Applied: ${booking.couponCode}`);
+      doc.text(`Discount: -${currency}${booking.discountAmount}`);
+    }
+
+    doc.text(`Payment Method: ${booking.paymentMethod}`);
+    doc.text(`Payment Status: ${booking.isPaid ? "Paid" : "Pending"}`);
+    doc.moveDown(0.5);
+    doc.fontSize(13).text(`Total Amount: ${currency}${booking.totalPrice}`, { underline: true });
+
+    doc.moveDown(2);
+    doc.fontSize(9).fillColor("#888").text(
+      "Thank you for booking with WanderLust.",
+      { align: "center" }
+    );
+
+    doc.end();
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };

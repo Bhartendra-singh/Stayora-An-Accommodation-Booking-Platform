@@ -24,7 +24,9 @@ const protect = async (req, res, next) => {
 
       user = await User.create({
         clerkId: userId,
-        email: clerkUser.emailAddresses[0].emailAddress, 
+        email: clerkUser.emailAddresses[0].emailAddress,
+        username: `${clerkUser.firstName || ""} ${clerkUser.lastName || ""}`.trim(),
+        image: clerkUser.imageUrl || "",
         role: "user",
         recentSearchCities: [],
       });
