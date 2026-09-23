@@ -253,6 +253,6 @@ New users start as `user`. Listing a hotel makes a user a `hotelOwner`. To creat
 **Bhartendra Singh**
 
 - GitHub: [@Bhartendra-singh](https://github.com/Bhartendra-singh)
-- LinkedIn: _add your profile link here_
+- LinkedIn: [Bhartendra Singh](https://www.linkedin.com/in/bhartendra-singh-17764a282/)
 
-If you like this project, a ⭐ on the repo is appreciated.
+
