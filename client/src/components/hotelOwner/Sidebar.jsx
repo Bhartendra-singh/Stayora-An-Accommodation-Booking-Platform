@@ -6,14 +6,17 @@ const Sidebar = () => {
 
   const sidebarLinks = [
     { name: "Dashboard", path: "/owner", icon: assets.dashboardIcon, end: true },
+    { name: "My Hotel", path: "/owner/hotel-profile", icon: assets.badgeIcon },
     { name: "Add Room", path: "/owner/add-room", icon: assets.addIcon },
     { name: "List Room", path: "/owner/list-room", icon: assets.listIcon },
     { name: "Add Offer", path: "/owner/add-offer", icon: assets.addIcon },
     { name: "List Offers", path: "/owner/list-offers", icon: assets.listIcon },
+    { name: "Add Coupon", path: "/owner/add-coupon", icon: assets.addIcon },
+    { name: "List Coupons", path: "/owner/list-coupons", icon: assets.listIcon },
   ]
 
   return (
-    <div className="md:w-64 w-16 border-r h-full border-gray-300 pt-4 flex flex-col">
+    <div className="md:w-64 w-16 border-r border-gray-300 pt-4 flex flex-col sticky top-0 self-start h-screen">
       {sidebarLinks.map((item, index) => (
         <NavLink
           key={index}

@@ -62,6 +62,51 @@ const MyBookings = () => {
   }
 };
 
+    const handleCancel = async (bookingId) => {
+        if (!window.confirm("Are you sure you want to cancel this booking?")) return;
+
+        try {
+            const { data } = await axios.patch(
+                `/api/bookings/cancel/${bookingId}`,
+                {},
+                { headers: { Authorization: `Bearer ${await getToken()}` } }
+            );
+
+            if (data.success) {
+                toast.success(data.message);
+                fetchUserBookings();
+            } else {
+                toast.error(data.message);
+            }
+        } catch (error) {
+            toast.error(error?.response?.data?.message || error.message);
+        }
+    };
+
+    const handleDownloadInvoice = async (bookingId) => {
+        try {
+            const response = await axios.get(
+                `/api/bookings/invoice/${bookingId}`,
+                {
+                    headers: { Authorization: `Bearer ${await getToken()}` },
+                    responseType: "blob",
+                }
+            );
+
+            const blob = new Blob([response.data], { type: "application/pdf" });
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `invoice-${bookingId}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (error) {
+            toast.error("Failed to download invoice");
+        }
+    };
+
     useEffect(()=>{
         if(user){
             fetchUserBookings()
@@ -90,7 +135,7 @@ const MyBookings = () => {
                             </p>
                             <div className='flex items-center gap-1 text-sm text-gray-500'>
                                 <img src={assets.locationIcon} alt='location-icon'/>
-                                <span>{booking.hotel.address}</span>
+                                <span>{booking?.hotel?.address}</span>
                             </div>
 
                             <div className='flex items-center gap-1 text-sm text-gray-500'>
@@ -117,17 +162,30 @@ const MyBookings = () => {
                         </div>
                     </div>
                     {/*--Payment Status */}
-                    <div className='flex flex-col items-start justify-center pt-3'>
+                    <div className='flex flex-col items-start justify-center pt-3 gap-2'>
                         <div className='flex items-center gap-2'>
                             <div className={`h-3 w-3 rounded-full ${booking.isPaid ? "bg-green-500" : "bg-red-500"}`}></div>
                             <p className={`text-sm ${booking.isPaid ? "text-green-500" : "text-red-500"}`}>
                                 {booking.isPaid ? "Paid" : "unpaid"}
                             </p>
                         </div>
-                        {!booking.isPaid && (
-                            <button onClick={()=>handlePayment(booking._id)} className='px-4 py-1.5 mt-4 text-xs border border-gray-400 rounded-full hover:bg-gray-50 transition-all cursor-pointer'>
-                                Pay Now</button>
+
+                        {booking.status === "cancelled" ? (
+                            <span className='px-3 py-1 text-xs rounded-full bg-gray-200 text-gray-600'>
+                                Cancelled
+                            </span>
+                        ) : (
+                            <>
+                                {!booking.isPaid && (
+                                    <button onClick={()=>handlePayment(booking._id)} className='px-4 py-1.5 text-xs border border-gray-400 rounded-full hover:bg-gray-50 transition-all cursor-pointer'>
+                                        Pay Now</button>
+                                )}
+                                <button onClick={()=>handleCancel(booking._id)} className='px-4 py-1.5 text-xs border border-red-300 text-red-500 rounded-full hover:bg-red-50 transition-all cursor-pointer'>
+                                    Cancel Booking</button>
+                            </>
                         )}
+                        <button onClick={()=>handleDownloadInvoice(booking._id)} className='px-4 py-1.5 text-xs border border-blue-300 text-blue-600 rounded-full hover:bg-blue-50 transition-all cursor-pointer'>
+                            Download Invoice</button>
                     </div>
                 </div>
             ))}

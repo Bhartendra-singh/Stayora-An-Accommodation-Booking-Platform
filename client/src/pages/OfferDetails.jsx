@@ -11,7 +11,7 @@ const OfferDetails = () => {
   if (!offer) return <div className="p-10">Offer not found</div>;
 
   return (
-    <div className="px-6 md:px-16 lg:px-24 xl:px-32 py-10">
+        <div className="px-6 md:px-16 lg:px-24 xl:px-32 pt-28 md:pt-36 pb-10">
       <img src={offer.image} className="rounded-xl mb-6" />
       <h1 className="text-3xl font-bold">{offer.title}</h1>
       <p className="mt-4">{offer.description}</p>

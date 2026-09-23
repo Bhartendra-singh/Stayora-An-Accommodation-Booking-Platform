@@ -1,65 +1,12 @@
-// import express from "express";
-// import "dotenv/config";
-// import cors from "cors";
-// import connectDB from "./config/db.js";
-// import { clerkMiddleware } from "@clerk/express";
-// import clerkWebhooks from "./controllers/clerkWebhooks.js";
-
-// import userRouter from "./routes/userRoutes.js";
-// import hotelRouter from "./routes/hotelRoutes.js";
-// import roomRouter from "./routes/roomRoutes.js";
-// import bookingRouter from "./routes/bookingRoutes.js";
-
-// import connectCloudinary from "./config/cloudinary.js";
-
-// import offerRoutes from "./routes/offerRoutes.js";
-
-// import testimonialRoutes from "./routes/testimonialRoutes.js";
-
-// import aiRoutes from "./routes/aiRoutes.js";
-
-// app.use("/api/ai", aiRoutes);
-
-// connectDB();
-// connectCloudinary();
-
-// const app = express();
-// app.use(cors());
-
-// //  Clerk webhook needs RAW body
-// app.post("/api/clerk", express.raw({ type: "application/json" }), clerkWebhooks);
-
-// // Middleware
-// app.use(express.json());
-// app.use(clerkMiddleware());
-
-// app.get("/", (req, res) => res.send("API is working"));
-
-// app.use("/api/user", userRouter);
-// app.use("/api/hotels", hotelRouter);
-// app.use("/api/rooms", roomRouter);
-// app.use("/api/bookings", bookingRouter);
-
-// app.use("/api/offers", offerRoutes);
-
-// app.use("/api/testimonials", testimonialRoutes);
-
-// const PORT = process.env.PORT || 3000;
-
-// app.listen(PORT, () =>
-//   console.log(`Server running on port ${PORT}`)
-// );
-
-// export default app;
-
-
-
 import express from "express";
 import "dotenv/config";
 import cors from "cors";
+import helmet from "helmet";
+
 import connectDB from "./config/db.js";
 import { clerkMiddleware } from "@clerk/express";
 import clerkWebhooks from "./controllers/clerkWebhooks.js";
+import { generalLimiter } from "./middleware/rateLimiters.js";
 
 import userRouter from "./routes/userRoutes.js";
 import hotelRouter from "./routes/hotelRoutes.js";
@@ -68,13 +15,27 @@ import bookingRouter from "./routes/bookingRoutes.js";
 import connectCloudinary from "./config/cloudinary.js";
 import offerRoutes from "./routes/offerRoutes.js";
 import testimonialRoutes from "./routes/testimonialRoutes.js";
-import aiRoutes from "./routes/aiRoutes.js";
+import roomReviewRoutes from "./routes/roomReviewRoutes.js";
+import couponRoutes from "./routes/couponRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
+
 
 connectDB();
 connectCloudinary();
 
 const app = express();
-app.use(cors());
+
+app.use(helmet());
+
+const allowedOrigin = process.env.CLIENT_URL || "http://localhost:5174";
+app.use(
+  cors({
+    origin: allowedOrigin,
+    credentials: true,
+  })
+);
+
+app.use(generalLimiter);
 
 app.post("/api/clerk", express.raw({ type: "application/json" }), clerkWebhooks);
 
@@ -89,9 +50,23 @@ app.use("/api/rooms", roomRouter);
 app.use("/api/bookings", bookingRouter);
 app.use("/api/offers", offerRoutes);
 app.use("/api/testimonials", testimonialRoutes);
-app.use("/api/ai", aiRoutes); // ✅ Sahi jagah
+app.use("/api/room-reviews", roomReviewRoutes);
+app.use("/api/coupons", couponRoutes);
+app.use("/api/admin", adminRoutes);
+
 
 const PORT = process.env.PORT || 3000;
+
+app.use((err, req, res, next) => {
+  if (err) {
+    console.error("Unhandled error:", err.message);
+    return res.status(400).json({
+      success: false,
+      message: err.message || "Something went wrong",
+    });
+  }
+  next();
+});
 
 app.listen(PORT, () =>
   console.log(`Server running on port ${PORT}`)

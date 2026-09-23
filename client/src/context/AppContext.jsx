@@ -6,20 +6,21 @@ import {toast} from 'react-hot-toast'
 
 axios.defaults.baseURL=import.meta.env.VITE_BACKEND_URL;
 
-//console.log("Backend URL =", import.meta.env.VITE_BACKEND_URL);
-
 const AppContext=createContext();
 
 export const AppProvider=({children})=>{
     const currency=import.meta.env.VITE_CURRENCY || "₹";
     const navigate=useNavigate();
-    const {user}=useUser();
+    const {user,isLoaded}=useUser();
     const {getToken}=useAuth()
 
     const [isOwner,setIsOwner]=useState(false)
+    const [isAdmin,setIsAdmin]=useState(false)
+    const [roleChecked,setRoleChecked]=useState(false)
     const [showHotelReg,setShowHotelReg]=useState(false)
     const [searchedCities,setSearchedCities]=useState([])
     const [rooms,setRooms]=useState([])
+    const [wishlist,setWishlist]=useState([])
 
     const [offers, setOffers] = useState([]); 
 
@@ -42,33 +43,32 @@ export const AppProvider=({children})=>{
                 {headers:{Authorization:`Bearer ${await getToken()}`}})
             if(data.success){
                 setIsOwner(data.role ==="hotelOwner")
+                setIsAdmin(data.role ==="admin")
                 setSearchedCities(data.recentSearchCities)
+                setWishlist(data.savedRooms || [])
+                setRoleChecked(true)
             }else{
-                //Retry fetching user details after 5 sec
                 setTimeout(()=>{
                     fetchUser()
                 },5000)
             }    
         } catch (error) {
             toast.error(error.message)
+            setRoleChecked(true)
         }
     }
 
-    // useEffect(()=>{
-    //     if(user){
-    //         fetchUser();
-    //     }
-    // },[user])
     useEffect(() => {
-  const loadUser = async () => {
-    const token = await getToken();
-    if (user && token) {
-      fetchUser();
-    }
-  };
+      if (!isLoaded) return
 
-  loadUser();
-}, [user]);
+      if (!user) {
+        setIsOwner(false)
+        setRoleChecked(true)
+        return
+      }
+
+      fetchUser();
+    }, [isLoaded, user]);
 
 const fetchOffers = async () => {
   try {
@@ -87,10 +87,32 @@ const fetchOffers = async () => {
         fetchOffers(); 
     },[])
 
+    const toggleWishlist = async (roomId) => {
+        if (!user) {
+            toast.error("Please login to save rooms");
+            return;
+        }
+        try {
+            const { data } = await axios.post(
+                `/api/user/wishlist/${roomId}`,
+                {},
+                { headers: { Authorization: `Bearer ${await getToken()}` } }
+            );
+            if (data.success) {
+                setWishlist(data.savedRooms);
+                toast.success(data.saved ? "Added to wishlist" : "Removed from wishlist");
+            } else {
+                toast.error(data.message);
+            }
+        } catch (error) {
+            toast.error(error?.response?.data?.message || error.message);
+        }
+    };
+
     const value={
-        currency,navigate,user,getToken,isOwner,setIsOwner,
+        currency,navigate,user,getToken,isOwner,setIsOwner,isAdmin,roleChecked,
         axios,showHotelReg,setShowHotelReg,searchedCities,setSearchedCities,
-        rooms,setRooms,offers
+        rooms,setRooms,offers,wishlist,toggleWishlist
     }
 
     return(

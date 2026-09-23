@@ -1,3 +1,12 @@
+
+
+
 node_modules
 .env
+.env.*
+!.env.example
 uploads
+*.log
+npm-debug.log*
+.DS_Store
+.vscode/

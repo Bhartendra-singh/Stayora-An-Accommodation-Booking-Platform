@@ -17,7 +17,9 @@ const bookingSchema= new mongoose.Schema({
         required:true,
         default:"Pay At Hotel",
     },
-    isPaid:{type:Boolean,default:false}
+    isPaid:{type:Boolean,default:false},
+    couponCode:{type:String,default:null},
+    discountAmount:{type:Number,default:0}
 },{timestamps:true});
 
 const Booking =mongoose.model("Booking",bookingSchema);

@@ -25,11 +25,16 @@ const userSchema = new mongoose.Schema(
 
     role: {
       type: String,
-      enum: ["user", "hotelOwner"],
+      enum: ["user", "hotelOwner", "admin"],
       default: "user",
     },
 
     recentSearchCities: {
+      type: [String],
+      default: [],
+    },
+
+    savedRooms: {
       type: [String],
       default: [],
     },

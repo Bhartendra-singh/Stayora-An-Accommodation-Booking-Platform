@@ -1,7 +1,7 @@
 import React,{useEffect, useState} from "react";
 import {useParams} from 'react-router-dom'
 import {assets, roomsDummyData,facilityIcons,roomCommonData} from "../assets/assets"
-import StarRating from "../components/StarRating"
+import RoomReviews from "../components/RoomReviews"
 import { useAppContext } from "../context/AppContext";
 import toast from "react-hot-toast";
 
@@ -13,6 +13,9 @@ const RoomDetails=()=>{
     const [checkInDate,setCheckInDate]=useState(null)
     const [checkOutDate,setCheckOutDate]=useState(null)
     const [guests,setGuests]=useState(1)
+    const [couponCode,setCouponCode]=useState("")
+    const [appliedCoupon,setAppliedCoupon]=useState(null)
+    const [applyingCoupon,setApplyingCoupon]=useState(false)
 
     const [isAvailable,setIsAvailable]=useState(false)
 
@@ -43,14 +46,40 @@ const RoomDetails=()=>{
         }
     }
 
-    //onSubmitHnadler fun to check availability & book the room
+    const applyCoupon = async () => {
+        if (!couponCode.trim()) {
+            toast.error("Enter a coupon code");
+            return;
+        }
+        setApplyingCoupon(true);
+        try {
+            const { data } = await axios.post(
+                '/api/coupons/validate',
+                { code: couponCode.trim(), hotelId: room.hotel._id },
+                { headers: { Authorization: `Bearer ${await getToken()}` } }
+            );
+            if (data.success) {
+                setAppliedCoupon(data);
+                toast.success(`Coupon applied: ${data.discountPercent}% off`);
+            } else {
+                setAppliedCoupon(null);
+                toast.error(data.message);
+            }
+        } catch (error) {
+            setAppliedCoupon(null);
+            toast.error(error?.response?.data?.message || 'Invalid coupon');
+        } finally {
+            setApplyingCoupon(false);
+        }
+    };
+
     const onSubmitHandler=async (e)=>{
         try {
             e.preventDefault();
             if(!isAvailable){
                 return checkAvailability();
             }else{
-                const {data}=await axios.post('/api/bookings/book',{room:id,checkInDate,checkOutDate,guests,paymentMethod:"Pay At Hotel"},
+                const {data}=await axios.post('/api/bookings/book',{room:id,checkInDate,checkOutDate,guests,paymentMethod:"Pay At Hotel",couponCode:appliedCoupon?appliedCoupon.code:undefined},
                     {headers:{Authorization:`Bearer ${await getToken()}`}}
                 )
                 if(data.success){
@@ -78,10 +107,6 @@ const RoomDetails=()=>{
            <div className="flex flex-col md:flex-row items-start md:items-center gap-2">
             <h1 className="text-3xl md:text-4xl font-playfair">{room.hotel.name}<span className="font-inter text-sm">({room.roomType})</span></h1>
             <p className="text-xs font-inter py-1.5 px-3 text-white bg-orange-500 rounded-full">20% OFF</p>
-           </div>
-           <div className="flex items-center gap-1 mt-2">
-            <StarRating/>
-            <p className="ml-2">200+ reviews</p>
            </div>
 
            <div className="flex items-center gap-1 text-gray-500 mt-2">
@@ -113,7 +138,6 @@ const RoomDetails=()=>{
                     <div className="flex flex-wrap items-center mt-3 mb-6 gap-4">
                         {room.amenities?.map((item,index)=>(
                             <div key={index} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-100">
-                                {/* <img src={facilityIcons[item]} alt={item} className="w-5 h-5"/> */}
                                 <img 
                                 src={Object.entries(facilityIcons).find(([k]) => k.toLowerCase() === item.toLowerCase())?.[1]} 
                                 alt={item} 
@@ -156,6 +180,35 @@ const RoomDetails=()=>{
                         <label htmlFor="guests" className="font-medium">Guests</label>
                         <input onChange={(e)=>setGuests(e.target.value)} value={guests} type="number" id="guests" placeholder="1"
                         className="max-w-20 rounded border border-gray-300 px-3 py-2 mt-1.5 outline-none" required/>
+                    </div>
+
+                    <div className="w-px h-15 bg-gray-300/70 max-md:hidden"></div>
+
+                    <div className="flex flex-col">
+                        <label htmlFor="coupon" className="font-medium">Coupon Code</label>
+                        <div className="flex gap-2 mt-1.5">
+                            <input
+                                id="coupon"
+                                type="text"
+                                value={couponCode}
+                                onChange={(e) => { setCouponCode(e.target.value.toUpperCase()); setAppliedCoupon(null); }}
+                                placeholder="Optional"
+                                className="w-32 rounded border border-gray-300 px-3 py-2 outline-none"
+                            />
+                            <button
+                                type="button"
+                                onClick={applyCoupon}
+                                disabled={applyingCoupon}
+                                className="text-sm border border-gray-400 rounded px-3 py-2 hover:bg-gray-50 disabled:opacity-60"
+                            >
+                                {applyingCoupon ? "..." : "Apply"}
+                            </button>
+                        </div>
+                        {appliedCoupon && (
+                            <p className="text-xs text-green-600 mt-1">
+                                {appliedCoupon.discountPercent}% discount applied
+                            </p>
+                        )}
                     </div>
 
                 </div>
@@ -213,20 +266,26 @@ const RoomDetails=()=>{
                     <img src={room.hotel.owner.image} alt="Host" className="h-14 w-14 md:h-18 md:w-18 rounded-full"/>
                     <div>
                         <p className="text-lg md:text-xl">Hosted by {room.hotel.name}</p>
-                        <div className="flex items-center mt-1">
-                            <StarRating/>
-                            <p className="ml-2">200+ reviews</p>
-                        </div>
                     </div>
                 </div>
-                <button className="px-6 py-2.5 mt-4 rounded text-white bg-primary hover:bg-primary-dull transition-all cursor-pointer">
+                <button
+                    onClick={() => {
+                        if (room.hotel.contact) {
+                            toast.success(`Contact: ${room.hotel.contact}`);
+                            window.location.href = `tel:${room.hotel.contact}`;
+                        } else {
+                            toast.error("Contact info not available for this hotel");
+                        }
+                    }}
+                    className="px-6 py-2.5 mt-4 rounded text-white bg-primary hover:bg-primary-dull transition-all cursor-pointer"
+                >
                     Contact Now
                 </button>
             </div>
+
+            <RoomReviews roomId={room._id} />
 
         </div>
     )
 }
 export default RoomDetails
-
-

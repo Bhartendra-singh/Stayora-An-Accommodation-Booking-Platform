@@ -7,7 +7,7 @@ const OffersPage = () => {
   const navigate = useNavigate();
 
   return (
-    <div className="px-6 md:px-16 lg:px-24 xl:px-32 py-10">
+        <div className="px-6 md:px-16 lg:px-24 xl:px-32 pt-28 md:pt-36 pb-10">
       <h1 className="text-3xl font-semibold mb-6">All Offers</h1>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

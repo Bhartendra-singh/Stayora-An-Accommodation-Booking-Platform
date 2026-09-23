@@ -1,9 +1,10 @@
 import React, { useState } from "react";
 import { useAppContext } from "../context/AppContext";
+import toast from "react-hot-toast";
 
 const AddReview = ({ refresh }) => {
 
-  const { axios, user, getToken, toast } = useAppContext(); //  toast added
+  const { axios, user, getToken } = useAppContext();
 
   const [form, setForm] = useState({
     address: "",
@@ -11,8 +12,11 @@ const AddReview = ({ refresh }) => {
     review: ""
   });
 
+  const [submitting, setSubmitting] = useState(false);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setSubmitting(true);
 
     try {
       const res = await axios.post("/api/testimonials", form, {
@@ -22,8 +26,7 @@ const AddReview = ({ refresh }) => {
       });
 
       if (res.data.success) {
-
-        toast.success("Review Added Successfully "); //  toast
+        toast.success("Review added successfully");
 
         setForm({
           address: "",
@@ -32,10 +35,14 @@ const AddReview = ({ refresh }) => {
         });
 
         refresh();
+      } else {
+        toast.error(res.data.message || "Something went wrong");
       }
 
     } catch (error) {
-      toast.error(error?.response?.data?.message || "Something went wrong"); //  toast error
+      toast.error(error?.response?.data?.message || "Something went wrong");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -51,7 +58,7 @@ const AddReview = ({ refresh }) => {
 
       <input
         type="text"
-        placeholder="Address"
+        placeholder="Your city (e.g. Mumbai)"
         value={form.address}
         onChange={(e) => setForm({ ...form, address: e.target.value })}
         className="w-full mb-2 p-2 border"
@@ -75,8 +82,12 @@ const AddReview = ({ refresh }) => {
         required
       />
 
-      <button className="bg-blue-500 text-white px-4 py-2 rounded w-full">
-        Submit
+      <button
+        type="submit"
+        disabled={submitting}
+        className="bg-blue-500 text-white px-4 py-2 rounded w-full disabled:opacity-60"
+      >
+        {submitting ? "Submitting..." : "Submit"}
       </button>
 
     </form>
